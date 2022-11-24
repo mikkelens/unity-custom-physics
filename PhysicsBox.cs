@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using Sirenix.OdinInspector;
 using Tools.Helpers;
 using Tools.Types;
@@ -19,10 +21,12 @@ namespace Physics
 	/// </summary>
     [RequireComponent(typeof(BoxCollider2D))]
     [SuppressMessage("ReSharper", "Unity.InefficientPropertyAccess")] // I don't care about transform.position warnings
-	public class PhysicalBox : MonoBehaviour
+	public class PhysicsBox : MonoBehaviour
 	{
 		[Header("Physics Settings")]
 		[SerializeField] private PhysicsSettings physics; // see below
+
+		private PhysicsSettings P => physics;
 
 	    [Header("Physics Debug")]
 	    [SerializeField] private Optional<Vector2> startVelocity;
@@ -40,17 +44,25 @@ namespace Physics
 	    private protected TimedState TouchingCeiling => touchingCeiling;
 
 	    private BoxCollider2D _box;
-	    private BoxCollider2D Box => _box != null ? _box : _box = GetComponent<BoxCollider2D>();
+	    private protected BoxCollider2D Box => _box != null ? _box : _box = GetComponent<BoxCollider2D>();
 	    private Vector2 TrueSize => Vector2.Scale(Box.size, transform.localScale.AsV2());
 
 	    // CollisionLayers should possibly be inverted with an "~" prefix
-	    private LayerMask CollisionLayers => physics.CustomCollisionLayers.Enabled
-		    ? physics.CustomCollisionLayers
+	    private LayerMask CollisionLayers => P.CustomCollisionLayers.Enabled
+		    ? P.CustomCollisionLayers
 		    : LayerMask.GetMask("Default");
 
-	    private void Awake()
+	    private protected virtual void Awake()
 	    {
 		    if (startVelocity.Enabled) velocity = startVelocity.Value;
+	    }
+
+	    private protected virtual void Start()
+	    {
+		    grounded = new TimedState(false);
+		    touchingWallLeft = new TimedState(false);
+		    touchingWallRight = new TimedState(false);
+		    touchingCeiling = new TimedState(false);
 	    }
 
 	    private void FixedUpdate()
@@ -60,7 +72,7 @@ namespace Physics
 		    if (debugTimeScale.Enabled) Time.timeScale = debugTimeScale.Value;
 
 		    // physics sandbox settings
-		    if (physics.Gravity.Enabled) velocity.y -= physics.Gravity.Value * Time.fixedDeltaTime;
+		    if (P.Gravity.Enabled) velocity.y -= P.Gravity.Value * Time.fixedDeltaTime;
 
 		    UpdateVelocity(ref velocity);
 
@@ -70,7 +82,7 @@ namespace Physics
 		    step = CorrectStep(step);
 
 		    // apply physics movement
-		    if (step.magnitude >= physics.MinimumMoveDistance)
+		    if (step.magnitude >= P.MinimumMoveDistance)
 		    {
 			    transform.Translate(step);
 
@@ -94,9 +106,9 @@ namespace Physics
 
 		    // make sure we only deal with the same collider once per physics step
 		    List<Collider2D> collidersToIgnore = new List<Collider2D>();
-		    for (int i = 0; i < physics.MaxCollisionPreventionIterations; i++) // each iteration
+		    for (int i = 0; i < P.MaxCollisionPreventionIterations; i++) // each iteration
 		    {
-			    RaycastHit2D[] hitArray = new RaycastHit2D[physics.MaxRegisteredCollidersPerIteration];
+			    RaycastHit2D[] hitArray = new RaycastHit2D[P.MaxRegisteredCollidersPerIteration];
 			    int hitCount = Physics2D.BoxCastNonAlloc(transform.position.AsV2(), TrueSize, 0f, step.normalized, hitArray, step.magnitude, CollisionLayers.value);
 
 			    if (hitCount == 0) break;
@@ -110,10 +122,10 @@ namespace Physics
 					// Debug.Log($"Hit collider: {hit.collider}, Hit normal: {hitNormal.ToString()}");
 
 					// remember touches
-					if (hitNormal.y >= physics.MinGroundNormalHeight) ground = true;
+					if (hitNormal.y >= P.MinGroundNormalHeight) ground = true;
 					if (hitNormal.x > 0) wallLeft = true;
 					if (hitNormal.x < 0) wallRight = true;
-					if (hitNormal.y <= -physics.MinGroundNormalHeight) ceiling = true;
+					if (hitNormal.y <= -P.MinGroundNormalHeight) ceiling = true;
 
 					Vector2 travelDirection = step.normalized;
 					float cancelRelevancy = Vector2.Dot(-hitNormal, travelDirection);
@@ -125,16 +137,16 @@ namespace Physics
 					Debug.DrawRay(hit.point, correction, Color.green, Time.fixedDeltaTime); // show correction for 1 frame
 					// Debug.Log($"Applied correction: {correction.ToString()}");
 
-					if (physics.Friction.Enabled)
+					if (P.Friction.Enabled)
 					{
 						// friction applied based on impact harshness
 						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
 						float stepAxisLikeness = Vector2.Dot(rightAxis, -step.normalized);
 						float maxFriction = step.magnitude * Mathf.Abs(stepAxisLikeness);
-						float frictionStrength = maxFriction * physics.Friction.Value;
-						if (physics.MinimumFriction.Enabled) frictionStrength = Mathf.Max(physics.MinimumFriction, frictionStrength);
+						float frictionStrength = maxFriction * P.Friction.Value;
+						if (P.MinimumFriction.Enabled) frictionStrength = Mathf.Max(P.MinimumFriction, frictionStrength);
 						float frictionAmount = Mathf.MoveTowards(0f, maxFriction, frictionStrength * Time.fixedDeltaTime);
-						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsSignedInt();
+						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
 						Vector2 friction = frictionAmount * frictionDirection;
 						correction += friction;
 					}
@@ -159,7 +171,21 @@ namespace Physics
 		    return distancesFromCenter - offset;
 	    }
 
-	    private protected float HeightToUpwardsVelocity(float height) => physics.Gravity.Enabled ? Mathf.Sqrt(2 * height * physics.Gravity) : height;
+	    private protected float HeightToUpwardsVelocity(float height) => P.Gravity.Enabled ? Mathf.Sqrt(2 * height * P.Gravity) : height;
+
+	    private protected bool OverlapBoxForOtherColliders(Vector2 position, Vector2 size)
+	    {
+		    Collider2D[] colliders = new Collider2D[2];
+		    Physics2D.OverlapBoxNonAlloc(position, size, 0f, colliders);
+		    return colliders.Any(hitCollider => hitCollider != null && hitCollider != Box);
+	    }
+
+	    private protected RaycastHit2D BoxCastForOtherColliders(Vector2 origin, Vector2 size, Vector2 direction, float maxDistance)
+	    {
+		    RaycastHit2D[] colliders = new RaycastHit2D[2];
+		    Physics2D.BoxCastNonAlloc(origin, size, 0f, direction, colliders, maxDistance, CollisionLayers.value);
+		    return new RaycastHit2D();
+	    }
 
 		private void OnDrawGizmosSelected()
 	    {
