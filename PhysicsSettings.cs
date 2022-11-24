@@ -1,7 +1,7 @@
-﻿using Scripts.Tools.Types;
+﻿using Tools.Types;
 using UnityEngine;
 
-namespace Scripts.Physics
+namespace Physics
 {
 	[CreateAssetMenu(fileName = "New PhysicsSettings", menuName = "PhysicsSettings")]
 	public class PhysicsSettings : ScriptableObject

@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using Scripts.Tools.Types;
 using Sirenix.OdinInspector;
 using Tools.Helpers;
+using Tools.Types;
 using UnityEngine;
 
-namespace Scripts.Physics
+namespace Physics
 {
 	/// <summary>
 	/// Simple physics subclass for entities or players.
