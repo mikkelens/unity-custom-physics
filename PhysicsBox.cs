@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -33,18 +32,12 @@ namespace Physics
 	    [SerializeField] private Optional<float> debugFixedDeltaTime = new Optional<float>(0.25f); // delay between physics steps, default is 4 updates per second
 	    [SerializeField] private Optional<float> debugTimeScale = new Optional<float>(0.5f); // slow down time, default is half speed
 	    [SerializeField, ReadOnly] private Vector2 velocity;
-	    [SerializeField, ReadOnly] private TimedState grounded;
-	    [SerializeField, ReadOnly] private TimedState touchingWallLeft;
-	    [SerializeField, ReadOnly] private TimedState touchingWallRight;
-	    [SerializeField, ReadOnly] private TimedState touchingCeiling;
 
-	    private protected TimedState Grounded => grounded;
-	    private protected TimedState TouchingWallLeft => touchingWallLeft;
-	    private protected TimedState TouchingWallRight => touchingWallRight;
-	    private protected TimedState TouchingCeiling => touchingCeiling;
+	    [field: SerializeField, ReadOnly]
+	    private protected CollisionStates CollisionStates { get; private set; }
 
 	    private BoxCollider2D _box;
-	    private protected BoxCollider2D Box => _box != null ? _box : _box = GetComponent<BoxCollider2D>();
+	    private BoxCollider2D Box => _box != null ? _box : _box = GetComponent<BoxCollider2D>();
 	    private Vector2 TrueSize => Vector2.Scale(Box.size, transform.localScale.AsV2());
 
 	    // CollisionLayers should possibly be inverted with an "~" prefix
@@ -59,10 +52,7 @@ namespace Physics
 
 	    private protected virtual void Start()
 	    {
-		    grounded = new TimedState(false);
-		    touchingWallLeft = new TimedState(false);
-		    touchingWallRight = new TimedState(false);
-		    touchingCeiling = new TimedState(false);
+		    CollisionStates = new CollisionStates();
 	    }
 
 	    private void FixedUpdate()
@@ -74,7 +64,7 @@ namespace Physics
 		    // physics sandbox settings
 		    if (P.Gravity.Enabled) velocity.y -= P.Gravity.Value * Time.fixedDeltaTime;
 
-		    UpdateVelocity(ref velocity);
+		    velocity = UpdateVelocity(velocity);
 
 		    // Velocity fix as collision handling. think this is called continuous interpolated physics?
 		    Vector2 step = velocity * Time.fixedDeltaTime;
@@ -94,15 +84,12 @@ namespace Physics
 		    velocity = step / Time.fixedDeltaTime;
 	    }
 
-	    private protected virtual void UpdateVelocity(ref Vector2 newVelocity) {}
+	    private protected virtual Vector2 UpdateVelocity(Vector2 newVelocity) => newVelocity;
 
 	    private Vector2 CorrectStep(Vector2 step)
 	    {
 		    // reset collision dependent states
-		    bool ground = false;
-		    bool ceiling = false;
-		    bool wallLeft = false;
-		    bool wallRight = false;
+		    CollisionStates newStates = new CollisionStates(); // false by default
 
 		    // make sure we only deal with the same collider once per physics step
 		    List<Collider2D> collidersToIgnore = new List<Collider2D>();
@@ -122,10 +109,10 @@ namespace Physics
 					// Debug.Log($"Hit collider: {hit.collider}, Hit normal: {hitNormal.ToString()}");
 
 					// remember touches
-					if (hitNormal.y >= P.MinGroundNormalHeight) ground = true;
-					if (hitNormal.x > 0) wallLeft = true;
-					if (hitNormal.x < 0) wallRight = true;
-					if (hitNormal.y <= -P.MinGroundNormalHeight) ceiling = true;
+					if (hitNormal.y >= P.MinGroundNormalHeight) newStates.grounded.State = true;
+					if (hitNormal.x > 0) newStates.wallLeft.State = true;
+					if (hitNormal.x < 0) newStates.wallRight.State = true;
+					if (hitNormal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
 
 					Vector2 travelDirection = step.normalized;
 					float cancelRelevancy = Vector2.Dot(-hitNormal, travelDirection);
@@ -156,20 +143,19 @@ namespace Physics
 			    }
 		    }
 		    // update states
-		    grounded.State = ground;
-		    touchingWallLeft.State = wallLeft;
-		    touchingWallRight.State = wallRight;
-		    touchingCeiling.State = ceiling;
+		    CollisionStates.TransferStates(newStates);
 
 		    return step;
 	    }
 
+/*
 	    private Vector2 GetSmallestVectorToObstacle(RaycastHit2D hit)
 	    {
 		    Vector2 distancesFromCenter = hit.point - transform.position.AsV2();
 		    Vector2 offset = Vector2.Min(TrueSize, distancesFromCenter);
 		    return distancesFromCenter - offset;
 	    }
+*/
 
 	    private protected float HeightToUpwardsVelocity(float height) => P.Gravity.Enabled ? Mathf.Sqrt(2 * height * P.Gravity) : height;
 
