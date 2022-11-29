@@ -74,7 +74,7 @@ namespace Physics
 		    step = CorrectStep(step);
 
 		    // apply physics movement
-		    if (step.magnitude >= P.MinimumMoveDistance)
+		    // if (step.magnitude >= P.MinimumMoveDistance)
 		    {
 			    transform.Translate(step);
 
@@ -100,7 +100,7 @@ namespace Physics
 			    RaycastHit2D[] hitArray = new RaycastHit2D[P.MaxRegisteredCollidersPerIteration];
 			    int hitCount = Physics2D.BoxCastNonAlloc(transform.position.AsV2(), TrueSize, 0f, step.normalized, hitArray, step.magnitude, CollisionLayers.value);
 
-			    if (hitCount == 0) break;
+			    if (hitCount == 0 || hitArray.All(hit => collidersToIgnore.Contains(hit.collider))) break;
 
 			    for (int h = 0; h < hitCount; h++)
 			    {
@@ -116,66 +116,53 @@ namespace Physics
 					if (hitNormal.x < 0) newStates.wallRight.State = true;
 					if (hitNormal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
 
-					Vector2 travelDirection = step.normalized;
-					float impactRelevancy = Vector2.Dot(-hitNormal, travelDirection);
-					if (impactRelevancy < 0f) continue; // dont apply corrections when not going towards collider
-
 					// find impact
-					float impactSpeed = (1 - hit.fraction) * step.magnitude;
-					Vector2 trueImpact = impactSpeed * impactRelevancy * hit.normal;
+					Vector2 impactForceDirection = hit.normal;
+					float directionLikeness = Vector2.Dot(impactForceDirection, -step.normalized);
+					if (directionLikeness <= 0f) continue;
+					float overlapDistance = step.magnitude * (1f - hit.fraction);
+					Vector2 impactForce = overlapDistance * directionLikeness * impactForceDirection;
+
+					Vector2 localCorrection;
 
 					// pushing other physics boxes
 					PhysicsBox otherPBox = hit.collider.GetComponent<PhysicsBox>();
-
-					Vector2 localCorrection = Vector2.zero;
 					if (otherPBox != null)
 					{
-						int priorityDifference = physics.PushPriority - otherPBox.physics.PushPriority;
-						if (priorityDifference >= 0)
-						{
-							// we need to do something to them
-							Vector2 otherStep = otherPBox.velocity * Time.fixedDeltaTime;
-							Vector2 otherTravelDirection = otherStep.normalized;
-							float otherImpactRelevancy = Vector2.Dot(hitNormal, otherTravelDirection);
-							if (otherImpactRelevancy > 0f)
-							{
-								Vector2 otherImpact = otherStep.magnitude * otherImpactRelevancy * -hit.normal;
-								Vector2 combinedImpact = otherImpact + -trueImpact;
+						Debug.Log($"{name} hit {otherPBox.name} with step: {step.ToString()}, localAccurateImpact: {impactForce.ToString()}, hit normal: {hit.normal.ToString()}");
+					}
+					if (otherPBox != null && otherPBox.physics.PushPriority < physics.PushPriority)
+					{
+						// take precedence, but still snap
+						localCorrection = Vector2.zero;
 
-								Vector2 foreignCorrection;
-								if (priorityDifference == 0)
-								{
-									// we push each other (depending on each speed)
-									float localPushFraction = trueImpact.magnitude / combinedImpact.magnitude;
-									foreignCorrection = combinedImpact;
-									localCorrection = localPushFraction * -combinedImpact;
-								}
-								else
-								{
-									// we only push them
-									foreignCorrection = combinedImpact;
-								}
-								otherPBox.PushWithVelocity(foreignCorrection / Time.fixedDeltaTime);
-								Debug.DrawRay(hit.point, foreignCorrection, Color.magenta, Time.fixedDeltaTime);
-							}
+						Vector2 otherStep = otherPBox.velocity * Time.fixedDeltaTime;
+						Vector2 otherStopDirection = -hit.normal;
+						float otherStopDirectionLikeness = Vector2.Dot(-otherStopDirection, otherStep.normalized);
+						if (otherStopDirectionLikeness > 0f)
+						{
+							float otherStopOverlapDistance = 1f;
+							Vector2 otherStopImpact = otherStopOverlapDistance * otherStopDirectionLikeness * otherStopDirection;
+							Vector2 combinedImpact = otherStopImpact - impactForce;
+							otherPBox.CorrectVelocityBy(combinedImpact / Time.fixedDeltaTime);
+							Debug.DrawRay(hit.point, combinedImpact, new Color(0.1f, 0.2f, 0f), Time.fixedDeltaTime);
 						}
 						else
 						{
-							// we let them push us (do we even need code for this?)
+							otherPBox.CorrectVelocityBy(-impactForce / Time.fixedDeltaTime);
 						}
 					}
 					else
 					{
-						localCorrection = trueImpact;
+						localCorrection = impactForce;
 						Debug.DrawRay(hit.point, localCorrection, Color.green, Time.fixedDeltaTime); // show correction for 1 frame
 					}
-
 
 					if (P.Friction.Enabled)
 					{
 						// friction applied based on impact harshness
 						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
-						float stepAxisLikeness = Vector2.Dot(rightAxis, -step.normalized);
+						float stepAxisLikeness = Vector2.Dot(rightAxis, step.normalized);
 						float maxFriction = step.magnitude * Mathf.Abs(stepAxisLikeness);
 						float frictionStrength = maxFriction * P.Friction.Value;
 						if (P.MinimumFriction.Enabled) frictionStrength = Mathf.Max(P.MinimumFriction, frictionStrength);
@@ -195,10 +182,9 @@ namespace Physics
 		    return step;
 	    }
 
-	    private void PushWithVelocity(Vector2 force)
+	    private void CorrectVelocityBy(Vector2 amount)
 	    {
-		    Debug.DrawRay(transform.position, force * Time.fixedDeltaTime, Color.yellow, Time.fixedDeltaTime);
-		    velocity += force; // enough to stop, and then push
+		    velocity += amount; // enough to stop, and then push
 	    }
 
 /*
@@ -226,7 +212,7 @@ namespace Physics
 		    return new RaycastHit2D();
 	    }
 
-		private void OnDrawGizmosSelected()
+	    private void OnDrawGizmosSelected()
 	    {
 		    // last physical position
 		    Vector2 pos = transform.position.AsV2();
