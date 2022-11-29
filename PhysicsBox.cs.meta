@@ -3,7 +3,8 @@ guid: ab9fa43f269b45740a10ad11188c84dc
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - physics: {fileID: 11400000, guid: 2e0d12f84696db44db7030fba367d01c, type: 2}
   executionOrder: 0
   icon: {fileID: 2800000, guid: 06bf6150656339941aa98e175a995445, type: 3}
   userData: 

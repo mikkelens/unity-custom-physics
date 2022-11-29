@@ -16,7 +16,9 @@ namespace Physics
 	/// For effective use, use 100 ticks/s FixedUpdate rate (0.01 fixedDeltaTime),
 	/// and simulation mode "Fixed Update".
 	///
-	/// To update velocity, use "UpdateVelocity()" method
+	/// To update velocity, use "UpdateVelocity()" method.
+	///
+	/// Collisions between physics boxes will be with priority, or using simple vector solving.
 	/// </summary>
     [RequireComponent(typeof(BoxCollider2D))]
     [SuppressMessage("ReSharper", "Unity.InefficientPropertyAccess")] // I don't care about transform.position warnings
@@ -76,8 +78,8 @@ namespace Physics
 		    {
 			    transform.Translate(step);
 
-			    Vector3 latePos = transform.position;
-				Debug.DrawLine(latePos, latePos + velocity.AsV3() * Time.fixedDeltaTime, Color.red, Time.fixedDeltaTime); // prediction line
+			    // Vector3 latePos = transform.position;
+				// Debug.DrawLine(latePos, latePos + velocity.AsV3() * Time.fixedDeltaTime, Color.red, Time.fixedDeltaTime); // prediction line
 		    }
 
 		    // remember velocity from step
@@ -115,14 +117,59 @@ namespace Physics
 					if (hitNormal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
 
 					Vector2 travelDirection = step.normalized;
-					float cancelRelevancy = Vector2.Dot(-hitNormal, travelDirection);
-					if (cancelRelevancy < 0f) continue; // dont apply corrections when not going towards collider
+					float impactRelevancy = Vector2.Dot(-hitNormal, travelDirection);
+					if (impactRelevancy < 0f) continue; // dont apply corrections when not going towards collider
 
-					// find solve correction
-					float cancelVelocity = (1 - hit.fraction) * step.magnitude;
-					Vector2 correction = cancelVelocity * cancelRelevancy * hit.normal;
-					Debug.DrawRay(hit.point, correction, Color.green, Time.fixedDeltaTime); // show correction for 1 frame
-					// Debug.Log($"Applied correction: {correction.ToString()}");
+					// find impact
+					float impactSpeed = (1 - hit.fraction) * step.magnitude;
+					Vector2 trueImpact = impactSpeed * impactRelevancy * hit.normal;
+
+					// pushing other physics boxes
+					PhysicsBox otherPBox = hit.collider.GetComponent<PhysicsBox>();
+
+					Vector2 localCorrection = Vector2.zero;
+					if (otherPBox != null)
+					{
+						int priorityDifference = physics.PushPriority - otherPBox.physics.PushPriority;
+						if (priorityDifference >= 0)
+						{
+							// we need to do something to them
+							Vector2 otherStep = otherPBox.velocity * Time.fixedDeltaTime;
+							Vector2 otherTravelDirection = otherStep.normalized;
+							float otherImpactRelevancy = Vector2.Dot(hitNormal, otherTravelDirection);
+							if (otherImpactRelevancy > 0f)
+							{
+								Vector2 otherImpact = otherStep.magnitude * otherImpactRelevancy * -hit.normal;
+								Vector2 combinedImpact = otherImpact + -trueImpact;
+
+								Vector2 foreignCorrection;
+								if (priorityDifference == 0)
+								{
+									// we push each other (depending on each speed)
+									float localPushFraction = trueImpact.magnitude / combinedImpact.magnitude;
+									foreignCorrection = combinedImpact;
+									localCorrection = localPushFraction * -combinedImpact;
+								}
+								else
+								{
+									// we only push them
+									foreignCorrection = combinedImpact;
+								}
+								otherPBox.PushWithVelocity(foreignCorrection / Time.fixedDeltaTime);
+								Debug.DrawRay(hit.point, foreignCorrection, Color.magenta, Time.fixedDeltaTime);
+							}
+						}
+						else
+						{
+							// we let them push us (do we even need code for this?)
+						}
+					}
+					else
+					{
+						localCorrection = trueImpact;
+						Debug.DrawRay(hit.point, localCorrection, Color.green, Time.fixedDeltaTime); // show correction for 1 frame
+					}
+
 
 					if (P.Friction.Enabled)
 					{
@@ -135,10 +182,10 @@ namespace Physics
 						float frictionAmount = Mathf.MoveTowards(0f, maxFriction, frictionStrength * Time.fixedDeltaTime);
 						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
 						Vector2 friction = frictionAmount * frictionDirection;
-						correction += friction;
+						localCorrection += friction;
 					}
 
-					step += correction; // apply correction
+					step += localCorrection; // apply correction
 					collidersToIgnore.Add(hit.collider);
 			    }
 		    }
@@ -146,6 +193,12 @@ namespace Physics
 		    CollisionStates.TransferStates(newStates);
 
 		    return step;
+	    }
+
+	    private void PushWithVelocity(Vector2 force)
+	    {
+		    Debug.DrawRay(transform.position, force * Time.fixedDeltaTime, Color.yellow, Time.fixedDeltaTime);
+		    velocity += force; // enough to stop, and then push
 	    }
 
 /*

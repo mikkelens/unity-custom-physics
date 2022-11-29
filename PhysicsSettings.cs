@@ -14,6 +14,6 @@ namespace Physics
 		[field: SerializeField] public Optional<float> Gravity { get; private set; } = 25f; // positive value, applied downwards
 		[field: SerializeField] public Optional<float> Friction { get; private set; } = 0.25f;
 		[field: SerializeField] public Optional<float> MinimumFriction { get; private set; } = 0.1f;
-		[field: SerializeField] public Optional<int> PushPriority { get; private set; } = 0;
+		[field: SerializeField] public int PushPriority { get; private set; }
 	}
 }
