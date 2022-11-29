@@ -20,8 +20,9 @@ namespace Physics
 	///
 	/// Collisions between physics boxes will be with priority, or using simple vector solving.
 	/// </summary>
-    [RequireComponent(typeof(BoxCollider2D))]
     [SuppressMessage("ReSharper", "Unity.InefficientPropertyAccess")] // I don't care about transform.position warnings
+	[SelectionBase]
+    [RequireComponent(typeof(BoxCollider2D))]
 	public class PhysicsBox : MonoBehaviour
 	{
 		[Header("Physics Settings")]
@@ -97,6 +98,8 @@ namespace Physics
 		    List<Collider2D> collidersToIgnore = new List<Collider2D>();
 		    for (int i = 0; i < P.MaxCollisionPreventionIterations; i++) // each iteration
 		    {
+			    if (step.magnitude == 0f) break; // this is not collision resolution, but prevention
+
 			    RaycastHit2D[] hitArray = new RaycastHit2D[P.MaxRegisteredCollidersPerIteration];
 			    int hitCount = Physics2D.BoxCastNonAlloc(transform.position.AsV2(), TrueSize, 0f, step.normalized, hitArray, step.magnitude, CollisionLayers.value);
 
@@ -106,74 +109,47 @@ namespace Physics
 			    {
 					RaycastHit2D hit = hitArray[h];
 					if (collidersToIgnore.Contains(hit.collider) || hit.collider == _box) continue; // hit a previous collider, skip resolve test
-
-					Vector2 hitNormal = hit.normal;
-					// Debug.Log($"Hit collider: {hit.collider}, Hit normal: {hitNormal.ToString()}");
+					collidersToIgnore.Add(hit.collider);
 
 					// remember touches
-					if (hitNormal.y >= P.MinGroundNormalHeight) newStates.grounded.State = true;
-					if (hitNormal.x > 0) newStates.wallLeft.State = true;
-					if (hitNormal.x < 0) newStates.wallRight.State = true;
-					if (hitNormal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
+					if (hit.normal.y >= P.MinGroundNormalHeight) newStates.grounded.State = true;
+					if (hit.normal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
+					if (hit.normal.x > 0) newStates.wallLeft.State = true;
+					else if (hit.normal.x < 0) newStates.wallRight.State = true;
 
-					// find impact
-					Vector2 impactForceDirection = hit.normal;
-					float directionLikeness = Vector2.Dot(impactForceDirection, -step.normalized);
-					if (directionLikeness <= 0f) continue;
-					float overlapDistance = step.magnitude * (1f - hit.fraction);
-					Vector2 impactForce = overlapDistance * directionLikeness * impactForceDirection;
+					// if (hit.fraction == 0f) continue; // exactly next to thing
 
-					Vector2 localCorrection;
+				    float overlapFraction = 1f - hit.fraction;
+					Vector2 entryNormal = -hit.normal;
+				    float stepEntryRelevance = Vector2.Dot(entryNormal, step.normalized);
+				    if (stepEntryRelevance <= 0f) continue; // going parallel or away from each other already
+					float entryDistance = step.magnitude * stepEntryRelevance * overlapFraction;
 
-					// pushing other physics boxes
-					PhysicsBox otherPBox = hit.collider.GetComponent<PhysicsBox>();
-					if (otherPBox != null)
+					PhysicsBox foreignPhysicsBox = hit.transform.GetComponent<PhysicsBox>();
+					if (foreignPhysicsBox != null && foreignPhysicsBox.physics.PushPriority < physics.PushPriority)
 					{
-						Debug.Log($"{name} hit {otherPBox.name} with step: {step.ToString()}, localAccurateImpact: {impactForce.ToString()}, hit normal: {hit.normal.ToString()}");
-					}
-					if (otherPBox != null && otherPBox.physics.PushPriority < physics.PushPriority)
-					{
-						// take precedence, but still snap
-						localCorrection = Vector2.zero;
-
-						Vector2 otherStep = otherPBox.velocity * Time.fixedDeltaTime;
-						Vector2 otherStopDirection = -hit.normal;
-						float otherStopDirectionLikeness = Vector2.Dot(-otherStopDirection, otherStep.normalized);
-						if (otherStopDirectionLikeness > 0f)
-						{
-							float otherStopOverlapDistance = 1f;
-							Vector2 otherStopImpact = otherStopOverlapDistance * otherStopDirectionLikeness * otherStopDirection;
-							Vector2 combinedImpact = otherStopImpact - impactForce;
-							otherPBox.CorrectVelocityBy(combinedImpact / Time.fixedDeltaTime);
-							Debug.DrawRay(hit.point, combinedImpact, new Color(0.1f, 0.2f, 0f), Time.fixedDeltaTime);
-						}
-						else
-						{
-							otherPBox.CorrectVelocityBy(-impactForce / Time.fixedDeltaTime);
-						}
+						// push other object - the amount we are pushing by will be added to its velocity, after also stopping it
+						foreignPhysicsBox.ConformToVelocity(velocity);
 					}
 					else
 					{
-						localCorrection = impactForce;
-						Debug.DrawRay(hit.point, localCorrection, Color.green, Time.fixedDeltaTime); // show correction for 1 frame
+						// correct self
+						step += entryDistance * hit.normal;
 					}
 
-					if (P.Friction.Enabled)
-					{
-						// friction applied based on impact harshness
-						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
-						float stepAxisLikeness = Vector2.Dot(rightAxis, step.normalized);
-						float maxFriction = step.magnitude * Mathf.Abs(stepAxisLikeness);
-						float frictionStrength = maxFriction * P.Friction.Value;
-						if (P.MinimumFriction.Enabled) frictionStrength = Mathf.Max(P.MinimumFriction, frictionStrength);
-						float frictionAmount = Mathf.MoveTowards(0f, maxFriction, frictionStrength * Time.fixedDeltaTime);
-						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
-						Vector2 friction = frictionAmount * frictionDirection;
-						localCorrection += friction;
-					}
-
-					step += localCorrection; // apply correction
-					collidersToIgnore.Add(hit.collider);
+					// if (P.Friction.Enabled)
+					// {
+					// 	// friction applied based on impact harshness
+					// 	Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
+					// 	float stepAxisLikeness = Vector2.Dot(rightAxis, step.normalized);
+					// 	float maxFriction = step.magnitude * Mathf.Abs(stepAxisLikeness);
+					// 	float frictionStrength = maxFriction * P.Friction.Value;
+					// 	if (P.MinimumFriction.Enabled) frictionStrength = Mathf.Max(P.MinimumFriction, frictionStrength);
+					// 	float frictionAmount = Mathf.MoveTowards(0f, maxFriction, frictionStrength * Time.fixedDeltaTime);
+					// 	Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
+					// 	Vector2 friction = frictionAmount * frictionDirection;
+					// 	localCorrection += friction;
+					// }
 			    }
 		    }
 		    // update states
@@ -182,9 +158,10 @@ namespace Physics
 		    return step;
 	    }
 
-	    private void CorrectVelocityBy(Vector2 amount)
+	    private void ConformToVelocity(Vector2 conformVelocity)
 	    {
-		    velocity += amount; // enough to stop, and then push
+		    velocity.x = velocity.x.SignedMax(conformVelocity.x);
+		    velocity.y = velocity.y.SignedMax(conformVelocity.y);
 	    }
 
 /*
