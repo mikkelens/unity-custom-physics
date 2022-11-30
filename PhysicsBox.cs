@@ -112,7 +112,7 @@ namespace Physics
 					collidersToIgnore.Add(hit.collider);
 
 					// remember touches
-					if (hit.normal.y >= P.MinGroundNormalHeight) newStates.grounded.State = true;
+					if (hit.normal.y > 0f) newStates.grounded.State = true;
 					if (hit.normal.y <= -P.MinGroundNormalHeight) newStates.ceilingAbove.State = true;
 					if (hit.normal.x > 0) newStates.wallLeft.State = true;
 					else if (hit.normal.x < 0) newStates.wallRight.State = true;

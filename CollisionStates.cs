@@ -4,7 +4,7 @@ using Tools.Types;
 namespace Physics
 {
 	[Serializable]
-	public struct CollisionStates
+	public class CollisionStates
 	{
 		public TimedState grounded;
 		public TimedState wallLeft;
