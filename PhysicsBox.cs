@@ -130,38 +130,43 @@ namespace Physics
 					{
 						// push other object - the amount we are pushing by will be added to its velocity, after also stopping it
 						foreignPhysicsBox.ConformToVelocity(velocity);
+						// todo: implement support for case where foreignPhysicsBox cannot be pushed,
+						// maybe my abstracting step correction phases and using part of the code again here.
+						// this would also fix friction making us slide into the frictioned object
 					}
-					else
-					{
+					// else // with else, it is smoother, but friction/obstruction does not work
+ 					{
 						// correct self
 						step += entryDistance * hit.normal;
 					}
 
-					// if (P.Friction.Enabled)
-					// {
-					// 	// friction applied based on impact harshness
-					// 	Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
-					// 	float stepAxisLikeness = Vector2.Dot(rightAxis, step.normalized);
-					// 	float maxFriction = step.magnitude * Mathf.Abs(stepAxisLikeness);
-					// 	float frictionStrength = maxFriction * P.Friction.Value;
-					// 	if (P.MinimumFriction.Enabled) frictionStrength = Mathf.Max(P.MinimumFriction, frictionStrength);
-					// 	float frictionAmount = Mathf.MoveTowards(0f, maxFriction, frictionStrength * Time.fixedDeltaTime);
-					// 	Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
-					// 	Vector2 friction = frictionAmount * frictionDirection;
-					// 	localCorrection += friction;
-					// }
+					if (P.Friction.Enabled) // todo: make friction above a value of 1 work
+					{
+						// friction applied based on impact harshness
+						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
+						float stepAxisLikeness = Vector2.Dot(rightAxis, -step.normalized);
+						float frictionTarget = step.magnitude * Mathf.Abs(stepAxisLikeness);
+						float frictionAmount = frictionTarget * P.Friction.Value;
+						if (P.MinimumFriction.Enabled) frictionAmount = Mathf.Max(P.MinimumFriction, frictionAmount);
+						float frictionStrength = Mathf.MoveTowards(0f, frictionTarget, frictionAmount * Time.fixedDeltaTime);
+						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
+						Vector2 friction = frictionStrength * frictionDirection;
+						step += friction;
+					}
 			    }
 		    }
 		    // update states
-		    CollisionStates.TransferStates(newStates);
+		    CollisionStates.UpdateStates(newStates);
 
 		    return step;
 	    }
 
-	    private void ConformToVelocity(Vector2 conformVelocity)
+	    private void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
 	    {
 		    velocity.x = velocity.x.SignedMax(conformVelocity.x);
 		    velocity.y = velocity.y.SignedMax(conformVelocity.y);
+		    // todo: return how well the thing conformed,
+		    // to allow partial stopping of pushing collider
 	    }
 
 /*

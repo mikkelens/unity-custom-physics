@@ -19,7 +19,7 @@ namespace Physics
 			ceilingAbove = startState;
 		}
 
-		public void TransferStates(CollisionStates newStates)
+		public void UpdateStates(CollisionStates newStates)
 		{
 			grounded.State = newStates.grounded.State;
 			wallLeft.State = newStates.wallLeft.State;
