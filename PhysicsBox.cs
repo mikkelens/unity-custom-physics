@@ -34,7 +34,7 @@ namespace Physics
 	    [SerializeField] private Optional<Vector2> startVelocity;
 	    [SerializeField] private Optional<float> debugFixedDeltaTime = new Optional<float>(0.25f); // delay between physics steps, default is 4 updates per second
 	    [SerializeField] private Optional<float> debugTimeScale = new Optional<float>(0.5f); // slow down time, default is half speed
-	    [SerializeField, ReadOnly] private Vector2 velocity;
+	    [SerializeField, ReadOnly] private protected Vector2 physicsVelocity;
 
 	    [field: SerializeField, ReadOnly]
 	    private protected CollisionStates CollisionStates { get; private set; }
@@ -50,13 +50,15 @@ namespace Physics
 
 	    private protected virtual void Awake()
 	    {
-		    if (startVelocity.Enabled) velocity = startVelocity.Value;
+		    if (startVelocity.Enabled) physicsVelocity = startVelocity.Value;
 	    }
 
 	    private protected virtual void Start()
 	    {
 		    CollisionStates = new CollisionStates();
 	    }
+
+	    private protected virtual float CurrentGravity => P.Gravity.Value;
 
 	    private void FixedUpdate()
 	    {
@@ -65,12 +67,13 @@ namespace Physics
 		    if (debugTimeScale.Enabled) Time.timeScale = debugTimeScale.Value;
 
 		    // physics sandbox settings
-		    if (P.Gravity.Enabled) velocity.y -= P.Gravity.Value * Time.fixedDeltaTime;
+		    if (P.Gravity.Enabled) physicsVelocity.y -= CurrentGravity * Time.fixedDeltaTime;
+		    if (P.MaxFallSpeed.Enabled) physicsVelocity.y = Mathf.Max(physicsVelocity.y, -P.MaxFallSpeed);
 
-		    velocity = UpdateVelocity(velocity);
+		    physicsVelocity = UpdateVelocity(physicsVelocity);
 
 		    // Velocity fix as collision handling. think this is called continuous interpolated physics?
-		    Vector2 step = velocity * Time.fixedDeltaTime;
+		    Vector2 step = physicsVelocity * Time.fixedDeltaTime;
 
 		    step = CorrectStep(step);
 
@@ -84,7 +87,7 @@ namespace Physics
 		    }
 
 		    // remember velocity from step
-		    velocity = step / Time.fixedDeltaTime;
+		    physicsVelocity = step / Time.fixedDeltaTime;
 	    }
 
 	    private protected virtual Vector2 UpdateVelocity(Vector2 newVelocity) => newVelocity;
@@ -129,7 +132,7 @@ namespace Physics
 					if (foreignPhysicsBox != null && foreignPhysicsBox.physics.PushPriority < physics.PushPriority)
 					{
 						// push other object - the amount we are pushing by will be added to its velocity, after also stopping it
-						foreignPhysicsBox.ConformToVelocity(velocity);
+						foreignPhysicsBox.ConformToVelocity(physicsVelocity);
 						// todo: implement support for case where foreignPhysicsBox cannot be pushed,
 						// maybe my abstracting step correction phases and using part of the code again here.
 						// this would also fix friction making us slide into the frictioned object
@@ -140,14 +143,14 @@ namespace Physics
 						step += entryDistance * hit.normal;
 					}
 
-					if (P.Friction.Enabled) // todo: make friction above a value of 1 work
+					if (P.CollisionFriction.Enabled) // todo: make friction above a value of 1 work
 					{
 						// friction applied based on impact harshness
 						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
 						float stepAxisLikeness = Vector2.Dot(rightAxis, -step.normalized);
 						float frictionTarget = step.magnitude * Mathf.Abs(stepAxisLikeness);
-						float frictionAmount = frictionTarget * P.Friction.Value;
-						if (P.MinimumFriction.Enabled) frictionAmount = Mathf.Max(P.MinimumFriction, frictionAmount);
+						float frictionAmount = frictionTarget * P.CollisionFriction.Value;
+						if (P.MinimumCollisionFriction.Enabled) frictionAmount = Mathf.Max(P.MinimumCollisionFriction, frictionAmount);
 						float frictionStrength = Mathf.MoveTowards(0f, frictionTarget, frictionAmount * Time.fixedDeltaTime);
 						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
 						Vector2 friction = frictionStrength * frictionDirection;
@@ -163,8 +166,8 @@ namespace Physics
 
 	    private void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
 	    {
-		    velocity.x = velocity.x.SignedMax(conformVelocity.x);
-		    velocity.y = velocity.y.SignedMax(conformVelocity.y);
+		    physicsVelocity.x = physicsVelocity.x.SignedMax(conformVelocity.x);
+		    physicsVelocity.y = physicsVelocity.y.SignedMax(conformVelocity.y);
 		    // todo: return how well the thing conformed,
 		    // to allow partial stopping of pushing collider
 	    }
@@ -178,7 +181,7 @@ namespace Physics
 	    }
 */
 
-	    private protected float HeightToUpwardsVelocity(float height) => P.Gravity.Enabled ? Mathf.Sqrt(2 * height * P.Gravity) : height;
+	    private protected float HeightToUpwardsVelocity(float height) => P.Gravity.Enabled ? Mathf.Sqrt(2 * height * CurrentGravity) : height;
 
 	    private protected bool OverlapBoxForOtherColliders(Vector2 position, Vector2 size)
 	    {
@@ -201,7 +204,7 @@ namespace Physics
 		    Gizmos.color = Color.green;
 		    Gizmos.DrawWireCube(pos, TrueSize);
 
-		    Vector2 posNextFrame = pos + velocity * Time.fixedDeltaTime;
+		    Vector2 posNextFrame = pos + physicsVelocity * Time.fixedDeltaTime;
 		    Gizmos.color = Color.blue;
 		    Gizmos.DrawWireCube(posNextFrame, TrueSize);
 	    }
