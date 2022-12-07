@@ -23,9 +23,11 @@ namespace Physics
     [SuppressMessage("ReSharper", "Unity.InefficientPropertyAccess")] // I don't care about transform.position warnings
 	[SelectionBase]
     [RequireComponent(typeof(BoxCollider2D))]
-	public abstract class PhysicsBox : MonoBehaviour
+	public class PhysicsBox : MonoBehaviour
 	{
-		[Header("Physics Settings")]
+		[Header("Box Settings")]
+		[SerializeField] private Optional<GravityObject> gravity;
+		[SerializeField] private List<MovementScriptableObject> movementComponents;
 		[SerializeField] private PhysicsSettings physics; // see below
 
 		private PhysicsSettings P => physics;
@@ -34,7 +36,7 @@ namespace Physics
 	    [SerializeField] private Optional<Vector2> startVelocity;
 	    [SerializeField] private Optional<float> debugFixedDeltaTime = new Optional<float>(0.25f); // delay between physics steps, default is 4 updates per second
 	    [SerializeField] private Optional<float> debugTimeScale = new Optional<float>(0.5f); // slow down time, default is half speed
-	    [SerializeField, ReadOnly] private protected Vector2 physicsVelocity;
+	    [SerializeField, ReadOnly] private Vector2 velocity;
 
 	    [field: SerializeField, ReadOnly]
 	    private protected CollisionStates CollisionStates { get; private set; }
@@ -48,17 +50,15 @@ namespace Physics
 		    ? P.CustomCollisionLayers
 		    : LayerMask.GetMask("Default");
 
-	    private protected virtual void Awake()
+	    private void Awake()
 	    {
-		    if (startVelocity.Enabled) physicsVelocity = startVelocity.Value;
+		    if (startVelocity.Enabled) velocity = startVelocity.Value;
 	    }
 
-	    private protected virtual void Start()
+	    private void Start()
 	    {
 		    CollisionStates = new CollisionStates();
 	    }
-
-	    private protected virtual float CurrentGravity => P.Gravity.Value;
 
 	    private void FixedUpdate()
 	    {
@@ -67,13 +67,13 @@ namespace Physics
 		    if (debugTimeScale.Enabled) Time.timeScale = debugTimeScale.Value;
 
 		    // physics sandbox settings
-		    if (P.Gravity.Enabled) physicsVelocity.y -= CurrentGravity * Time.fixedDeltaTime;
-		    if (P.MaxFallSpeed.Enabled) physicsVelocity.y = Mathf.Max(physicsVelocity.y, -P.MaxFallSpeed);
+		    if (P.Gravity.Enabled) velocity.y -= CurrentGravity * Time.fixedDeltaTime;
+		    if (P.MaxFallSpeed.Enabled) velocity.y = Mathf.Max(velocity.y, -P.MaxFallSpeed);
 
-		    physicsVelocity = UpdateVelocity(physicsVelocity);
+		    velocity = UpdateVelocity(velocity);
 
 		    // Velocity fix as collision handling. think this is called continuous interpolated physics?
-		    Vector2 step = physicsVelocity * Time.fixedDeltaTime;
+		    Vector2 step = velocity * Time.fixedDeltaTime;
 
 		    step = CorrectStep(step);
 
@@ -87,10 +87,16 @@ namespace Physics
 		    }
 
 		    // remember velocity from step
-		    physicsVelocity = step / Time.fixedDeltaTime;
+		    velocity = step / Time.fixedDeltaTime;
 	    }
 
-	    private protected abstract Vector2 UpdateVelocity(Vector2 newVelocity);
+	    private Vector2 UpdateVelocity(Vector2 newVelocity)
+	    {
+		    foreach (var VARIABLE in move)
+		    {
+
+		    }
+	    }
 
 	    private Vector2 CorrectStep(Vector2 step)
 	    {
@@ -145,7 +151,7 @@ namespace Physics
 			    if (foreignPhysicsBox is not PhysicsBoxHazard)
 			    {
 				    // push other object - the amount we are pushing by will be added to its velocity, after also stopping it
-					foreignPhysicsBox.ConformToVelocity(physicsVelocity);
+					foreignPhysicsBox.ConformToVelocity(velocity);
 					newStep += entryDistance * hit.normal;
 			    }
 			    else
@@ -177,20 +183,11 @@ namespace Physics
 
 	    private void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
 	    {
-		    physicsVelocity.x = physicsVelocity.x.SignedMax(conformVelocity.x);
-		    physicsVelocity.y = physicsVelocity.y.SignedMax(conformVelocity.y);
+		    velocity.x = velocity.x.SignedMax(conformVelocity.x);
+		    velocity.y = velocity.y.SignedMax(conformVelocity.y);
 		    // todo: return how well the thing conformed,
 		    // to allow partial stopping of pushing collider
 	    }
-
-/*
-	    private Vector2 GetSmallestVectorToObstacle(RaycastHit2D hit)
-	    {
-		    Vector2 distancesFromCenter = hit.point - transform.position.AsV2();
-		    Vector2 offset = Vector2.Min(TrueSize, distancesFromCenter);
-		    return distancesFromCenter - offset;
-	    }
-*/
 
 	    private protected float HeightToUpwardsVelocity(float height) => P.Gravity.Enabled ? Mathf.Sqrt(2 * height * CurrentGravity) : height;
 
@@ -215,7 +212,7 @@ namespace Physics
 		    Gizmos.color = Color.green;
 		    Gizmos.DrawWireCube(pos, TrueSize);
 
-		    Vector2 posNextFrame = pos + physicsVelocity * Time.fixedDeltaTime;
+		    Vector2 posNextFrame = pos + velocity * Time.fixedDeltaTime;
 		    Gizmos.color = Color.blue;
 		    Gizmos.DrawWireCube(posNextFrame, TrueSize);
 	    }
