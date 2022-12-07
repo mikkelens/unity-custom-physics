@@ -23,7 +23,7 @@ namespace Physics
     [SuppressMessage("ReSharper", "Unity.InefficientPropertyAccess")] // I don't care about transform.position warnings
 	[SelectionBase]
     [RequireComponent(typeof(BoxCollider2D))]
-	public class PhysicsBox : MonoBehaviour
+	public abstract class PhysicsBox : MonoBehaviour
 	{
 		[Header("Physics Settings")]
 		[SerializeField] private PhysicsSettings physics; // see below
@@ -90,7 +90,7 @@ namespace Physics
 		    physicsVelocity = step / Time.fixedDeltaTime;
 	    }
 
-	    private protected virtual Vector2 UpdateVelocity(Vector2 newVelocity) => newVelocity;
+	    private protected abstract Vector2 UpdateVelocity(Vector2 newVelocity);
 
 	    private Vector2 CorrectStep(Vector2 step)
 	    {
@@ -122,46 +122,57 @@ namespace Physics
 
 					// if (hit.fraction == 0f) continue; // exactly next to thing
 
-				    float overlapFraction = 1f - hit.fraction;
-					Vector2 entryNormal = -hit.normal;
-				    float stepEntryRelevance = Vector2.Dot(entryNormal, step.normalized);
-				    if (stepEntryRelevance <= 0f) continue; // going parallel or away from each other already
-					float entryDistance = step.magnitude * stepEntryRelevance * overlapFraction;
-
-					PhysicsBox foreignPhysicsBox = hit.transform.GetComponent<PhysicsBox>();
-					if (foreignPhysicsBox != null && foreignPhysicsBox.physics.PushPriority < physics.PushPriority)
-					{
-						// push other object - the amount we are pushing by will be added to its velocity, after also stopping it
-						foreignPhysicsBox.ConformToVelocity(physicsVelocity);
-						// todo: implement support for case where foreignPhysicsBox cannot be pushed,
-						// maybe my abstracting step correction phases and using part of the code again here.
-						// this would also fix friction making us slide into the frictioned object
-					}
-					// else // with else, it is smoother, but friction/obstruction does not work
- 					{
-						// correct self
-						step += entryDistance * hit.normal;
-					}
-
-					if (P.CollisionFriction.Enabled) // todo: make friction above a value of 1 work
-					{
-						// friction applied based on impact harshness
-						Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
-						float stepAxisLikeness = Vector2.Dot(rightAxis, -step.normalized);
-						float frictionTarget = step.magnitude * Mathf.Abs(stepAxisLikeness);
-						float frictionAmount = frictionTarget * P.CollisionFriction.Value;
-						if (P.MinimumCollisionFriction.Enabled) frictionAmount = Mathf.Max(P.MinimumCollisionFriction, frictionAmount);
-						float frictionStrength = Mathf.MoveTowards(0f, frictionTarget, frictionAmount * Time.fixedDeltaTime);
-						Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
-						Vector2 friction = frictionStrength * frictionDirection;
-						step += friction;
-					}
+				    step = HandleCollision(step, hit);
 			    }
 		    }
 		    // update states
 		    CollisionStates.UpdateStates(newStates);
 
 		    return step;
+	    }
+
+	    private protected virtual Vector2 HandleCollision(Vector2 newStep, RaycastHit2D hit)
+	    {
+		    float overlapFraction = 1f - hit.fraction;
+		    Vector2 entryNormal = -hit.normal;
+		    float stepEntryRelevance = Vector2.Dot(entryNormal, newStep.normalized);
+		    if (stepEntryRelevance <= 0f) return newStep;
+		    float entryDistance = newStep.magnitude * stepEntryRelevance * overlapFraction;
+
+		    PhysicsBox foreignPhysicsBox = hit.transform.GetComponent<PhysicsBox>();
+		    if (foreignPhysicsBox != null && foreignPhysicsBox.physics.PushPriority < physics.PushPriority)
+		    {
+			    if (foreignPhysicsBox is not PhysicsBoxHazard)
+			    {
+				    // push other object - the amount we are pushing by will be added to its velocity, after also stopping it
+					foreignPhysicsBox.ConformToVelocity(physicsVelocity);
+					newStep += entryDistance * hit.normal;
+			    }
+			    else
+			    {
+				    // simply do nothing (hazard handles damage)
+			    }
+		    }
+		    else
+		    {
+			    // simply correct self
+			    newStep += entryDistance * hit.normal;
+		    }
+
+		    if (P.CollisionFriction.Enabled) // todo: make friction above a value of 1 work?
+		    {
+			    // friction applied based on impact harshness
+			    Vector2 rightAxis = Vector2.Perpendicular(hit.normal);
+			    float stepAxisLikeness = Vector2.Dot(rightAxis, -newStep.normalized);
+			    float frictionTarget = newStep.magnitude * Mathf.Abs(stepAxisLikeness);
+			    float frictionAmount = frictionTarget * P.CollisionFriction.Value;
+			    if (P.MinimumCollisionFriction.Enabled) frictionAmount = Mathf.Max(P.MinimumCollisionFriction, frictionAmount);
+			    float frictionStrength = Mathf.MoveTowards(0f, frictionTarget, frictionAmount * Time.fixedDeltaTime);
+			    Vector2 frictionDirection = rightAxis * stepAxisLikeness.AsIntSign();
+			    Vector2 friction = frictionStrength * frictionDirection;
+			    newStep += friction;
+		    }
+		    return newStep;
 	    }
 
 	    private void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
