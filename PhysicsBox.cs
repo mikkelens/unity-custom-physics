@@ -35,7 +35,7 @@ namespace Physics
 	    [SerializeField] private Optional<Vector2> startVelocity;
 	    [SerializeField] private Optional<float> debugFixedDeltaTime = new Optional<float>(0.25f); // delay between physics steps, default is 4 updates per second
 	    [SerializeField] private Optional<float> debugTimeScale = new Optional<float>(0.5f); // slow down time, default is half speed
-	    [field: SerializeField, ReadOnly] public Vector2 Velocity { get; private protected set; }
+	    [field: SerializeField, ReadOnly] public Vector2 Velocity { get; set; }
 
 	    [field: SerializeField, ReadOnly] public CollisionStates CollisionStates { get; private set; }
 
@@ -55,12 +55,12 @@ namespace Physics
 		    if (startVelocity.Enabled) Velocity = startVelocity.Value;
 	    }
 
-	    private void Start()
+	    private protected virtual void Start()
 	    {
 		    CollisionStates = new CollisionStates();
 	    }
 
-	    private void FixedUpdate()
+	    private protected virtual void FixedUpdate()
 	    {
 		    // debug
 		    if (debugFixedDeltaTime.Enabled) Time.fixedDeltaTime = debugFixedDeltaTime.Value; // may not work...
@@ -70,21 +70,14 @@ namespace Physics
 
 		    // physics sandbox settings
 		    if (P.Gravity.Enabled) velocity.y -= CurrentGravity * Time.fixedDeltaTime;
-		    if (P.MaxFallSpeed.Enabled) velocity.y = Mathf.Max(Velocity.y, -P.MaxFallSpeed);
+		    if (P.MaxFallSpeed.Enabled) velocity.y = Mathf.Max(velocity.y, -P.MaxFallSpeed);
 
 		    // Velocity fix as collision handling. think this is called continuous interpolated physics?
 		    Vector2 step = velocity * Time.fixedDeltaTime;
 
 		    step = CorrectStep(step);
 
-		    // apply physics movement
-		    // if (step.magnitude >= P.MinimumMoveDistance)
-		    {
-			    transform.Translate(step);
-
-			    // Vector3 latePos = transform.position;
-				// Debug.DrawLine(latePos, latePos + velocity.AsV3() * Time.fixedDeltaTime, Color.red, Time.fixedDeltaTime); // prediction line
-		    }
+		    transform.Translate(step);
 
 		    // remember velocity from step
 		    velocity = step / Time.fixedDeltaTime;
