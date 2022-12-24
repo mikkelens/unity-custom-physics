@@ -136,16 +136,7 @@ namespace Physics
 		    PhysicsBox foreignPhysicsBox = hit.transform.GetComponent<PhysicsBox>();
 		    if (foreignPhysicsBox != null && foreignPhysicsBox.physicsSettings.PushPriority < physicsSettings.PushPriority)
 		    {
-			    // if (foreignPhysicsBox is not PhysicsBoxHazard)
-			    {
-				    // push other object - the amount we are pushing by will be added to its velocity, after also stopping it
-					foreignPhysicsBox.ConformToVelocity(Velocity);
-					newStep += entryDistance * hit.normal;
-			    }
-			    // else
-			    // {
-				   //  // simply do nothing (hazard handles damage)
-			    // }
+			    newStep = HandlePush(newStep, hit, foreignPhysicsBox, entryDistance);
 		    }
 		    else
 		    {
@@ -166,6 +157,22 @@ namespace Physics
 			    Vector2 friction = frictionStrength * frictionDirection;
 			    newStep += friction;
 		    }
+		    return newStep;
+	    }
+
+	    private protected virtual Vector2 HandlePush(Vector2 newStep, RaycastHit2D hit, PhysicsBox foreignPhysicsBox, float entryDistance)
+	    {
+
+		    // if (foreignPhysicsBox is not PhysicsBoxHazard)
+		    {
+			    // push other object - the amount we are pushing by will be added to its velocity, after also stopping it
+			    foreignPhysicsBox.ConformToVelocity(Velocity);
+			    newStep += entryDistance * hit.normal;
+		    }
+		    // else
+		    // {
+		    //  // simply do nothing (hazard handles damage)
+		    // }
 		    return newStep;
 	    }
 
