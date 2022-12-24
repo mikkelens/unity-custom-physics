@@ -176,7 +176,7 @@ namespace Physics
 		    return newStep;
 	    }
 
-	    private void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
+	    internal void ConformToVelocity(Vector2 conformVelocity) // used by pushing object
 	    {
 		    Vector2 newVelocity = Velocity;
 		    newVelocity.x = Velocity.x.SignedMax(conformVelocity.x);
