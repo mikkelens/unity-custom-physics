@@ -48,6 +48,8 @@ namespace Physics
 		    ? P.CustomCollisionLayers
 		    : LayerMask.GetMask("Default");
 
+	    private Vector2 ColliderCenter => transform.position.AsV2() + Box.offset;
+
 	    private protected virtual float CurrentGravity => P.Gravity.Value;
 
 	    private void Awake()
@@ -98,7 +100,7 @@ namespace Physics
 			    if (step.magnitude == 0f) break; // this is not collision resolution, but prevention
 
 			    RaycastHit2D[] hitArray = new RaycastHit2D[P.MaxRegisteredCollidersPerIteration];
-			    int hitCount = Physics2D.BoxCastNonAlloc(transform.position.AsV2(), TrueSize, 0f, step.normalized, hitArray, step.magnitude, CollisionLayers.value);
+			    int hitCount = Physics2D.BoxCastNonAlloc(ColliderCenter, TrueSize, 0f, step.normalized, hitArray, step.magnitude, CollisionLayers.value);
 
 			    if (hitCount == 0 || hitArray.All(hit => collidersToIgnore.Contains(hit.collider))) break;
 
@@ -205,7 +207,7 @@ namespace Physics
 	    private void OnDrawGizmosSelected()
 	    {
 		    // last physical position
-		    Vector2 pos = transform.position.AsV2();
+		    Vector2 pos = ColliderCenter;
 		    Gizmos.color = Color.green;
 		    Gizmos.DrawWireCube(pos, TrueSize);
 
